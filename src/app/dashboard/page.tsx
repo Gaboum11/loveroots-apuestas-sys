@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { collection, query, getDocs, orderBy, addDoc, where } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, addDoc, where, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import toast from 'react-hot-toast';
@@ -59,18 +59,35 @@ export default function Dashboard() {
   };
 
   const handlePredict = (matchId: string, predictedWinner: string) => {
-    confirmAction(`¿Estás seguro de predecir que ganará ${predictedWinner}? No podrás cambiarlo después.`, async () => {
+    confirmAction(`¿Estás seguro de predecir que ganará ${predictedWinner}?`, async () => {
       try {
+        const newTimestamp = new Date().toISOString();
         const docRef = await addDoc(collection(db, 'bets'), {
           userId: user!.uid,
           matchId,
-          predictedWinner
+          predictedWinner,
+          timestamp: newTimestamp
         });
-        setMyBets(prev => [...prev, { id: docRef.id, matchId, predictedWinner, userId: user!.uid }]);
+        setMyBets(prev => [...prev, { id: docRef.id, matchId, predictedWinner, userId: user!.uid, timestamp: newTimestamp }]);
         toast.success('¡Predicción guardada!');
       } catch (err) {
         console.error(err);
         toast.error('Error al guardar la predicción.');
+      }
+    });
+  };
+
+  const handleChangePrediction = (betId: string, newPredictedWinner: string) => {
+    confirmAction(`¿Cambiar tu predicción a ${newPredictedWinner}?`, async () => {
+      try {
+        const newTimestamp = new Date().toISOString();
+        const betRef = doc(db, 'bets', betId);
+        await updateDoc(betRef, { predictedWinner: newPredictedWinner, timestamp: newTimestamp });
+        setMyBets(prev => prev.map(b => b.id === betId ? { ...b, predictedWinner: newPredictedWinner, timestamp: newTimestamp } : b));
+        toast.success('¡Predicción actualizada!');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al actualizar la predicción.');
       }
     });
   };
@@ -182,6 +199,22 @@ export default function Dashboard() {
                               {match.status === 'completed' && (
                                 <div style={{ marginTop: '0.25rem', fontWeight: 600, color: match.winner === myPrediction.predictedWinner ? 'var(--success)' : 'var(--danger)' }}>
                                   {match.winner === myPrediction.predictedWinner ? '¡+1 Punto!' : 'Incorrecto'}
+                                </div>
+                              )}
+                              
+                              {/* Change Prediction Buttons */}
+                              {match.status !== 'completed' && match.bettingOpen && (
+                                <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                                  {match.team1 !== myPrediction.predictedWinner && (
+                                    <button onClick={() => handleChangePrediction(myPrediction.id, match.team1)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.75rem' }}>
+                                      Cambiar a {match.team1}
+                                    </button>
+                                  )}
+                                  {match.team2 !== myPrediction.predictedWinner && (
+                                    <button onClick={() => handleChangePrediction(myPrediction.id, match.team2)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.75rem' }}>
+                                      Cambiar a {match.team2}
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>

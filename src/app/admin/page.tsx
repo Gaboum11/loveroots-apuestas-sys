@@ -16,6 +16,7 @@ export default function AdminPortal() {
   
   const [usersList, setUsersList] = useState<any[]>([]);
   const [matchesList, setMatchesList] = useState<any[]>([]);
+  const [betsList, setBetsList] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(true);
   const [appUrl, setAppUrl] = useState('');
 
@@ -51,6 +52,11 @@ export default function AdminPortal() {
       const mQuery = query(collection(db, 'matches'));
       const mSnapshot = await getDocs(mQuery);
       setMatchesList(mSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // Fetch bets
+      const bQuery = query(collection(db, 'bets'));
+      const bSnapshot = await getDocs(bQuery);
+      setBetsList(bSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
       console.error(err);
       toast.error('Error al cargar datos. Revisa tus permisos.');
@@ -370,6 +376,37 @@ export default function AdminPortal() {
                         </button>
                       </div>
                     )}
+
+                    {/* Predictions List */}
+                    <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                      <h5 style={{ marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Predicciones de Usuarios:</h5>
+                      {(() => {
+                        const matchBets = betsList.filter(b => b.matchId === match.id).sort((a, b) => {
+                          if (!a.timestamp) return 1;
+                          if (!b.timestamp) return -1;
+                          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+                        });
+
+                        if (matchBets.length === 0) {
+                          return <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Nadie ha apostado aún.</p>;
+                        }
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxHeight: '150px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                            {matchBets.map(bet => {
+                              const betUser = usersList.find(u => u.id === bet.userId);
+                              const timeString = bet.timestamp ? new Date(bet.timestamp).toLocaleString() : 'Sin fecha';
+                              return (
+                                <div key={bet.id} style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)', padding: '0.3rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
+                                  <span><strong>{betUser?.displayName || 'Usuario'}</strong> ➔ {bet.predictedWinner}</span>
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.65rem' }}>{timeString}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 ))}
               </div>
