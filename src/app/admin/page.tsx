@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { collection, query, getDocs, doc, updateDoc, addDoc, where, increment, writeBatch } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, addDoc, where, increment, writeBatch, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { QRCodeSVG } from 'qrcode.react';
@@ -17,11 +17,18 @@ export default function AdminPortal() {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [matchesList, setMatchesList] = useState<any[]>([]);
   const [betsList, setBetsList] = useState<any[]>([]);
+  const [teamsList, setTeamsList] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(true);
   const [appUrl, setAppUrl] = useState('');
 
-  // Form state for new match
-  const [newMatch, setNewMatch] = useState({ category: '', team1: '', team2: '' });
+  // Form states
+  const [newMatch, setNewMatch] = useState({ category: 'Cuartos de final', team1: '', team2: '' });
+  const [newTeam, setNewTeam] = useState({ name: '', player1: '', player2: '' });
+
+  const getTeamDisplayName = (team: any) => {
+    if (team.name && team.name.trim() !== '') return team.name;
+    return `${team.player1} & ${team.player2}`;
+  };
 
   useEffect(() => {
     setAppUrl(window.location.origin);
@@ -57,6 +64,11 @@ export default function AdminPortal() {
       const bQuery = query(collection(db, 'bets'));
       const bSnapshot = await getDocs(bQuery);
       setBetsList(bSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // Fetch teams
+      const tQuery = query(collection(db, 'teams'));
+      const tSnapshot = await getDocs(tQuery);
+      setTeamsList(tSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
       console.error(err);
       toast.error('Error al cargar datos. Revisa tus permisos.');
@@ -113,6 +125,38 @@ export default function AdminPortal() {
     });
   };
 
+  const handleCreateTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTeam.player1 || !newTeam.player2) {
+      toast.error('Por favor llena los nombres de ambos jugadores.');
+      return;
+    }
+    try {
+      const docRef = await addDoc(collection(db, 'teams'), {
+        name: newTeam.name,
+        player1: newTeam.player1,
+        player2: newTeam.player2
+      });
+      setTeamsList(prev => [...prev, { id: docRef.id, name: newTeam.name, player1: newTeam.player1, player2: newTeam.player2 }]);
+      setNewTeam({ name: '', player1: '', player2: '' });
+      toast.success('Equipo creado exitosamente');
+    } catch (err) {
+      toast.error('Error al crear equipo.');
+    }
+  };
+
+  const deleteTeam = (teamId: string) => {
+    confirmAction('¿Borrar este equipo? Esto no afectará los partidos ya creados.', async () => {
+      try {
+        await deleteDoc(doc(db, 'teams', teamId));
+        setTeamsList(prev => prev.filter(t => t.id !== teamId));
+        toast.success('Equipo eliminado.');
+      } catch (err) {
+        toast.error('Error al eliminar equipo.');
+      }
+    });
+  };
+
   const handleCreateMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMatch.category || !newMatch.team1 || !newMatch.team2) {
@@ -129,7 +173,7 @@ export default function AdminPortal() {
         winner: null,
       });
       setMatchesList(prev => [...prev, { id: docRef.id, category: newMatch.category, team1: newMatch.team1, team2: newMatch.team2, bettingOpen: false, status: 'pending', winner: null }]);
-      setNewMatch({ category: '', team1: '', team2: '' });
+      setNewMatch({ category: 'Cuartos de final', team1: '', team2: '' });
       toast.success('Partido creado exitosamente');
     } catch (err) {
       toast.error('Error al crear el partido.');
@@ -353,42 +397,133 @@ export default function AdminPortal() {
           </div>
         </div>
 
+        {/* Team Management Section */}
+        <div className="glass-card animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3>Gestión de Equipos</h3>
+          </div>
+          
+          <div style={{ marginBottom: '2rem' }}>
+            <form onSubmit={handleCreateTeam} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 150px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Nombre del Equipo (Opcional)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={newTeam.name} 
+                  onChange={e => setNewTeam({...newTeam, name: e.target.value})} 
+                  placeholder="Ej. Los Ping Pongeros"
+                />
+              </div>
+              <div style={{ flex: '1 1 150px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Jugador 1</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={newTeam.player1} 
+                  onChange={e => setNewTeam({...newTeam, player1: e.target.value})} 
+                  placeholder="Nombre Jugador 1"
+                />
+              </div>
+              <div style={{ flex: '1 1 150px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Jugador 2</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={newTeam.player2} 
+                  onChange={e => setNewTeam({...newTeam, player2: e.target.value})} 
+                  placeholder="Nombre Jugador 2"
+                />
+              </div>
+              <button type="submit" className="btn-secondary" style={{ padding: '0.75rem 1.5rem', height: 'fit-content' }}>Añadir Equipo</button>
+            </form>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                  <th style={{ padding: '1rem' }}>Equipo (Mostrado)</th>
+                  <th style={{ padding: '1rem' }}>Jugador 1</th>
+                  <th style={{ padding: '1rem' }}>Jugador 2</th>
+                  <th style={{ padding: '1rem', width: '100px' }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamsList.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay equipos creados.</td>
+                  </tr>
+                )}
+                {teamsList.map((t) => (
+                  <tr key={`team-${t.id}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td style={{ padding: '1rem', fontWeight: 600 }}>{getTeamDisplayName(t)}</td>
+                    <td style={{ padding: '1rem' }}>{t.player1}</td>
+                    <td style={{ padding: '1rem' }}>{t.player2}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <button onClick={() => deleteTeam(t.id)} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderColor: 'var(--danger)', color: 'var(--danger)' }}>
+                        Borrar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {/* Create Match Section */}
         <div className="glass-card animate-fade-in">
           <h3 style={{ marginBottom: '1rem' }}>Crear Partido</h3>
-          <form onSubmit={handleCreateMatch} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 200px' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Categoría (ej. Cuartos de final)</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                value={newMatch.category} 
-                onChange={e => setNewMatch({...newMatch, category: e.target.value})} 
-                placeholder="Nombre de la categoría"
-              />
-            </div>
-            <div style={{ flex: '1 1 200px' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Equipo 1</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                value={newMatch.team1} 
-                onChange={e => setNewMatch({...newMatch, team1: e.target.value})} 
-                placeholder="Nombre Equipo 1"
-              />
-            </div>
-            <div style={{ flex: '1 1 200px' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Equipo 2</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                value={newMatch.team2} 
-                onChange={e => setNewMatch({...newMatch, team2: e.target.value})} 
-                placeholder="Nombre Equipo 2"
-              />
-            </div>
-            <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem', height: 'fit-content' }}>Añadir Partido</button>
-          </form>
+          {teamsList.length < 2 ? (
+            <p style={{ color: 'var(--warning)', fontSize: '0.875rem' }}>Debes crear al menos 2 equipos para poder crear un partido.</p>
+          ) : (
+            <form onSubmit={handleCreateMatch} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Categoría</label>
+                <select 
+                  className="input-field" 
+                  value={newMatch.category} 
+                  onChange={e => setNewMatch({...newMatch, category: e.target.value})}
+                >
+                  <option value="Fase de Grupos">Fase de Grupos</option>
+                  <option value="Octavos de final">Octavos de final</option>
+                  <option value="Cuartos de final">Cuartos de final</option>
+                  <option value="Semifinal">Semifinal</option>
+                  <option value="Tercer Lugar">Tercer Lugar</option>
+                  <option value="Final">Final</option>
+                  <option value="Amistoso">Amistoso</option>
+                </select>
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Equipo 1</label>
+                <select 
+                  className="input-field" 
+                  value={newMatch.team1} 
+                  onChange={e => setNewMatch({...newMatch, team1: e.target.value})} 
+                >
+                  <option value="" disabled>Selecciona un equipo</option>
+                  {teamsList.map(t => (
+                    <option key={`t1-${t.id}`} value={getTeamDisplayName(t)}>{getTeamDisplayName(t)}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Equipo 2</label>
+                <select 
+                  className="input-field" 
+                  value={newMatch.team2} 
+                  onChange={e => setNewMatch({...newMatch, team2: e.target.value})} 
+                >
+                  <option value="" disabled>Selecciona un equipo</option>
+                  {teamsList.map(t => (
+                    <option key={`t2-${t.id}`} value={getTeamDisplayName(t)}>{getTeamDisplayName(t)}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem', height: 'fit-content' }}>Añadir Partido</button>
+            </form>
+          )}
         </div>
 
         {/* Matches List */}
