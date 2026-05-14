@@ -49,7 +49,7 @@ export default function Home() {
         });
       }
     } catch (err: any) {
-      setError(err.message || 'Error signing in. Please try again.');
+      setError(err.message || 'Error al iniciar sesión. Por favor, intenta de nuevo.');
     } finally {
       setIsSigningIn(false);
     }
@@ -59,7 +59,7 @@ export default function Home() {
     return (
       <main style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
         <div className="animate-fade-in" style={{ fontSize: '1.5rem', fontWeight: 500 }}>
-          Loading...
+          Cargando...
         </div>
       </main>
     );
@@ -95,7 +95,7 @@ export default function Home() {
 
         <div>
           <h1 style={{ marginBottom: '0.5rem', fontSize: '2rem' }}>Mysterious Pong</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Betting & Tournament System</p>
+          <p style={{ color: 'var(--text-secondary)' }}>Sistema de Torneo y Apuestas</p>
         </div>
 
         {error && (
@@ -128,11 +128,11 @@ export default function Home() {
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'}
         >
           <FcGoogle size={24} />
-          <span>{isSigningIn ? 'Signing in...' : 'Sign in with Google'}</span>
+          <span>{isSigningIn ? 'Iniciando sesión...' : 'Iniciar sesión con Google'}</span>
         </button>
 
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-          To participate in betting, you must log in and be approved by an administrator after payment.
+          Para participar en las apuestas, debes iniciar sesión y ser aprobado por un administrador luego de realizar tu pago.
         </p>
       </div>
     </main>

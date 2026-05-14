@@ -6,6 +6,8 @@ import { useAuth } from '@/context/AuthContext';
 import { collection, query, getDocs, orderBy, addDoc, where } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
+import toast from 'react-hot-toast';
+import { confirmAction } from '@/lib/toastUtils';
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
@@ -47,34 +49,34 @@ export default function Dashboard() {
     } catch (err: any) {
       console.error(err);
       if (err.message?.includes('permissions')) {
-        alert("Permission Error: Make sure your Firebase Rules allow reading 'users'. (Test Mode recommended during dev)");
+        toast.error("Error de Permisos: Asegúrate de que las Reglas de Firebase permitan leer 'users'.");
       } else {
-        alert("Failed to fetch data.");
+        toast.error("Error al cargar los datos.");
       }
     } finally {
       setIsFetching(false);
     }
   };
 
-  const handlePredict = async (matchId: string, predictedWinner: string) => {
-    if (!confirm(`Are you sure you want to predict ${predictedWinner} to win? You cannot change this later.`)) return;
-    
-    try {
-      const docRef = await addDoc(collection(db, 'bets'), {
-        userId: user!.uid,
-        matchId,
-        predictedWinner
-      });
-      setMyBets(prev => [...prev, { id: docRef.id, matchId, predictedWinner, userId: user!.uid }]);
-      alert('Prediction saved!');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to save prediction.');
-    }
+  const handlePredict = (matchId: string, predictedWinner: string) => {
+    confirmAction(`¿Estás seguro de predecir que ganará ${predictedWinner}? No podrás cambiarlo después.`, async () => {
+      try {
+        const docRef = await addDoc(collection(db, 'bets'), {
+          userId: user!.uid,
+          matchId,
+          predictedWinner
+        });
+        setMyBets(prev => [...prev, { id: docRef.id, matchId, predictedWinner, userId: user!.uid }]);
+        toast.success('¡Predicción guardada!');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al guardar la predicción.');
+      }
+    });
   };
 
   if (loading || !user) {
-    return <main style={{ padding: '2rem', textAlign: 'center' }}>Loading...</main>;
+    return <main style={{ padding: '2rem', textAlign: 'center' }}>Cargando...</main>;
   }
 
   const handleSignOut = () => signOut(auth);
@@ -93,22 +95,22 @@ export default function Dashboard() {
   return (
     <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
       <header className="responsive-header">
-        <h2>Welcome, {user.displayName}</h2>
+        <h2>Bienvenido(a), {user.displayName}</h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
           {user.role === 'admin' && (
-            <button className="btn-secondary" onClick={() => router.push('/admin')}>Admin Portal</button>
+            <button className="btn-secondary" onClick={() => router.push('/admin')}>Portal Admin</button>
           )}
-          <button className="btn-secondary" onClick={handleSignOut}>Sign Out</button>
+          <button className="btn-secondary" onClick={handleSignOut}>Cerrar Sesión</button>
         </div>
       </header>
 
       {!user.isApprovedToBet ? (
         <div className="glass-card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-          <h2 style={{ color: 'var(--warning)', marginBottom: '1rem' }}>Account Pending Approval</h2>
+          <h2 style={{ color: 'var(--warning)', marginBottom: '1rem' }}>Cuenta Pendiente de Aprobación</h2>
           <p style={{ color: 'var(--text-secondary)' }}>
-            You have successfully created an account. An administrator must approve your account after verifying your payment before you can start predicting matches.
+            Has creado tu cuenta exitosamente. Un administrador debe verificar tu pago y aprobar tu cuenta antes de que puedas empezar a predecir partidos.
           </p>
-          <button className="btn-secondary" onClick={fetchData} style={{ marginTop: '2rem' }}>Refresh Status</button>
+          <button className="btn-secondary" onClick={fetchData} style={{ marginTop: '2rem' }}>Actualizar Estado</button>
         </div>
       ) : (
         <div className="dashboard-grid">
@@ -116,16 +118,16 @@ export default function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             <div className="glass-card animate-fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3>Matches & Predictions</h3>
+                <h3>Partidos y Predicciones</h3>
                 <button className="btn-secondary" onClick={fetchData} disabled={isFetching}>
-                  {isFetching ? 'Refreshing...' : 'Refresh Data'}
+                  {isFetching ? 'Actualizando...' : 'Actualizar'}
                 </button>
               </div>
               <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                Select a match where betting is open to predict the winner. Each correct prediction earns you 1 point.
+                Selecciona un partido con apuestas abiertas para predecir el ganador. Cada predicción correcta te suma 1 punto.
               </p>
               
-              {Object.keys(matchesByCategory).length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No matches created yet.</p>}
+              {Object.keys(matchesByCategory).length === 0 && <p style={{ color: 'var(--text-secondary)' }}>Aún no hay partidos creados.</p>}
               
               {Object.keys(matchesByCategory).map(category => (
                 <div key={category} style={{ marginBottom: '2rem' }}>
@@ -147,11 +149,11 @@ export default function Dashboard() {
                               background: match.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(139, 92, 246, 0.1)',
                               color: match.status === 'completed' ? 'var(--success)' : 'var(--accent-secondary)'
                             }}>
-                              {match.status === 'completed' ? `Winner: ${match.winner}` : 'Pending'}
+                              {match.status === 'completed' ? `Ganador: ${match.winner}` : 'Pendiente'}
                             </span>
                             {match.bettingOpen && !myPrediction && (
                               <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)', background: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)' }}>
-                                Betting Open
+                                Apuestas Abiertas
                               </span>
                             )}
                           </div>
@@ -176,10 +178,10 @@ export default function Dashboard() {
                               textAlign: 'center',
                               fontSize: '0.875rem'
                             }}>
-                              Your prediction: <strong>{myPrediction.predictedWinner}</strong>
+                              Tu predicción: <strong>{myPrediction.predictedWinner}</strong>
                               {match.status === 'completed' && (
                                 <div style={{ marginTop: '0.25rem', fontWeight: 600, color: match.winner === myPrediction.predictedWinner ? 'var(--success)' : 'var(--danger)' }}>
-                                  {match.winner === myPrediction.predictedWinner ? '+1 Point!' : 'Incorrect'}
+                                  {match.winner === myPrediction.predictedWinner ? '¡+1 Punto!' : 'Incorrecto'}
                                 </div>
                               )}
                             </div>
@@ -187,15 +189,15 @@ export default function Dashboard() {
                             match.bettingOpen ? (
                               <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <button onClick={() => handlePredict(match.id, match.team1)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.875rem' }}>
-                                  Predict {match.team1}
+                                  Votar {match.team1}
                                 </button>
                                 <button onClick={() => handlePredict(match.id, match.team2)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.875rem' }}>
-                                  Predict {match.team2}
+                                  Votar {match.team2}
                                 </button>
                               </div>
                             ) : (
                               <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-secondary)', padding: '0.5rem' }}>
-                                {match.status === 'completed' ? 'Match Over' : 'Betting Closed'}
+                                {match.status === 'completed' ? 'Partido Finalizado' : 'Apuestas Cerradas'}
                               </div>
                             )
                           )}
@@ -211,16 +213,16 @@ export default function Dashboard() {
           {/* Sidebar / Leaderboard */}
           <div className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', height: 'fit-content' }}>
             <div>
-              <h3 style={{ marginBottom: '0.5rem' }}>Your Points</h3>
+              <h3 style={{ marginBottom: '0.5rem' }}>Tus Puntos</h3>
               <div style={{ fontSize: '3rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
                 {user.points || 0}
               </div>
             </div>
 
             <div>
-              <h3 style={{ marginBottom: '1rem' }}>Leaderboard</h3>
+              <h3 style={{ marginBottom: '1rem' }}>Tabla de Posiciones</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {leaderboard.length === 0 && <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Loading...</p>}
+                {leaderboard.length === 0 && <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Cargando...</p>}
                 {leaderboard.map((u, index) => (
                   <div key={u.id} style={{ 
                     display: 'flex', 

@@ -7,6 +7,8 @@ import { collection, query, getDocs, doc, updateDoc, addDoc, where, increment, w
 import { db, auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
 import { QRCodeSVG } from 'qrcode.react';
+import toast from 'react-hot-toast';
+import { confirmAction } from '@/lib/toastUtils';
 
 export default function AdminPortal() {
   const { user, loading } = useAuth();
@@ -51,7 +53,7 @@ export default function AdminPortal() {
       setMatchesList(mSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
       console.error(err);
-      alert('Failed to fetch data. Check permissions.');
+      toast.error('Error al cargar datos. Revisa tus permisos.');
     } finally {
       setIsFetching(false);
     }
@@ -62,15 +64,16 @@ export default function AdminPortal() {
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, { isApprovedToBet: !currentStatus });
       setUsersList(prev => prev.map(u => u.id === userId ? { ...u, isApprovedToBet: !currentStatus } : u));
+      toast.success(currentStatus ? 'Acceso de usuario revocado' : 'Usuario aprobado');
     } catch (err) {
-      alert('Failed to update user approval status.');
+      toast.error('Error al actualizar el estado del usuario.');
     }
   };
 
   const handleCreateMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMatch.category || !newMatch.team1 || !newMatch.team2) {
-      alert('Please fill all fields');
+      toast.error('Por favor llena todos los campos');
       return;
     }
     try {
@@ -84,8 +87,9 @@ export default function AdminPortal() {
       });
       setMatchesList(prev => [...prev, { id: docRef.id, category: newMatch.category, team1: newMatch.team1, team2: newMatch.team2, bettingOpen: false, status: 'pending', winner: null }]);
       setNewMatch({ category: '', team1: '', team2: '' });
+      toast.success('Partido creado exitosamente');
     } catch (err) {
-      alert('Failed to create match.');
+      toast.error('Error al crear el partido.');
     }
   };
 
@@ -94,52 +98,88 @@ export default function AdminPortal() {
       const matchRef = doc(db, 'matches', matchId);
       await updateDoc(matchRef, { bettingOpen: !currentStatus });
       setMatchesList(prev => prev.map(m => m.id === matchId ? { ...m, bettingOpen: !currentStatus } : m));
+      toast.success(currentStatus ? 'Apuestas cerradas' : 'Apuestas abiertas');
     } catch (err) {
-      alert('Failed to toggle betting status.');
+      toast.error('Error al cambiar el estado de las apuestas.');
     }
   };
 
-  const setWinner = async (matchId: string, winnerName: string) => {
-    if (!confirm(`Are you sure you want to set ${winnerName} as the winner? This will award points and close the match.`)) return;
-    
-    try {
-      // 1. Update Match
-      const matchRef = doc(db, 'matches', matchId);
-      await updateDoc(matchRef, {
-        winner: winnerName,
-        status: 'completed',
-        bettingOpen: false
-      });
+  const setWinner = (matchId: string, winnerName: string) => {
+    confirmAction(`¿Estás seguro de declarar a ${winnerName} como ganador? Esto repartirá los puntos y cerrará el partido.`, async () => {
+      try {
+        // 1. Update Match
+        const matchRef = doc(db, 'matches', matchId);
+        await updateDoc(matchRef, {
+          winner: winnerName,
+          status: 'completed',
+          bettingOpen: false
+        });
 
-      // 2. Distribute Points using Batch
-      const betsQuery = query(collection(db, 'bets'), where('matchId', '==', matchId));
-      const betsSnapshot = await getDocs(betsQuery);
-      
-      const batch = writeBatch(db);
-      
-      betsSnapshot.forEach((betDoc) => {
-        const betData = betDoc.data();
-        if (betData.predictedWinner === winnerName) {
-          const userRef = doc(db, 'users', betData.userId);
-          batch.update(userRef, { points: increment(1) });
-        }
-      });
-      
-      await batch.commit();
-      
-      // Refresh to get updated points and match statuses
-      fetchData();
-      alert('Winner set and points distributed!');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to set winner and distribute points.');
-    }
+        // 2. Distribute Points using Batch
+        const betsQuery = query(collection(db, 'bets'), where('matchId', '==', matchId));
+        const betsSnapshot = await getDocs(betsQuery);
+        
+        const batch = writeBatch(db);
+        
+        betsSnapshot.forEach((betDoc) => {
+          const betData = betDoc.data();
+          if (betData.predictedWinner === winnerName) {
+            const userRef = doc(db, 'users', betData.userId);
+            batch.update(userRef, { points: increment(1) });
+          }
+        });
+        
+        await batch.commit();
+        
+        fetchData();
+        toast.success('¡Ganador guardado y puntos distribuidos!');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al guardar ganador y distribuir puntos.');
+      }
+    });
+  };
+
+  const reactivateMatch = (matchId: string, currentWinner: string) => {
+    confirmAction(`¿Estás seguro de querer reactivar este partido? Esto quitará los puntos que se le dieron a los que apostaron por ${currentWinner}.`, async () => {
+      try {
+        // 1. Update Match back to pending
+        const matchRef = doc(db, 'matches', matchId);
+        await updateDoc(matchRef, {
+          winner: null,
+          status: 'pending',
+          bettingOpen: false // Keep it closed for safety initially
+        });
+
+        // 2. Reverse Points using Batch
+        const betsQuery = query(collection(db, 'bets'), where('matchId', '==', matchId));
+        const betsSnapshot = await getDocs(betsQuery);
+        
+        const batch = writeBatch(db);
+        
+        betsSnapshot.forEach((betDoc) => {
+          const betData = betDoc.data();
+          if (betData.predictedWinner === currentWinner) {
+            const userRef = doc(db, 'users', betData.userId);
+            batch.update(userRef, { points: increment(-1) }); // Deduct the point
+          }
+        });
+        
+        await batch.commit();
+        
+        fetchData();
+        toast.success('Partido reactivado y puntos revertidos.');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al reactivar el partido.');
+      }
+    });
   };
 
   const handleSignOut = () => signOut(auth);
 
   if (loading || !user || user.role !== 'admin') {
-    return <main style={{ padding: '2rem', textAlign: 'center' }}>Loading...</main>;
+    return <main style={{ padding: '2rem', textAlign: 'center' }}>Cargando...</main>;
   }
 
   // Group matches by category
@@ -152,10 +192,10 @@ export default function AdminPortal() {
   return (
     <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
       <header className="responsive-header">
-        <h2>Admin Portal - Mysterious Pong</h2>
+        <h2>Portal Admin - Mysterious Pong</h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn-secondary" onClick={() => router.push('/dashboard')}>Go to Dashboard</button>
-          <button className="btn-secondary" onClick={handleSignOut}>Sign Out</button>
+          <button className="btn-secondary" onClick={() => router.push('/dashboard')}>Ir al Dashboard</button>
+          <button className="btn-secondary" onClick={handleSignOut}>Cerrar Sesión</button>
         </div>
       </header>
 
@@ -163,16 +203,16 @@ export default function AdminPortal() {
         {/* QR Code Section */}
         <div className="glass-card animate-fade-in" style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', alignItems: 'center' }}>
           <div>
-            <h3 style={{ marginBottom: '0.5rem' }}>Share App (QR Code)</h3>
+            <h3 style={{ marginBottom: '0.5rem' }}>Compartir App (Código QR)</h3>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', maxWidth: '400px' }}>
-              Players can scan this QR code to access the app and log in. Once deployed, the code will automatically point to your live website.
+              Los jugadores pueden escanear este código para entrar e iniciar sesión. Al desplegar a producción, el código apuntará a tu web automáticamente.
             </p>
             <div style={{ background: 'white', padding: '1rem', borderRadius: 'var(--radius-md)', display: 'inline-block' }}>
               {appUrl && <QRCodeSVG value={appUrl} size={150} />}
             </div>
           </div>
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Direct Link:</p>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Enlace Directo:</p>
             <a href={appUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>{appUrl}</a>
           </div>
         </div>
@@ -180,9 +220,9 @@ export default function AdminPortal() {
         {/* User Management Section */}
         <div className="glass-card animate-fade-in">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3>User Management</h3>
+            <h3>Gestión de Usuarios</h3>
             <button className="btn-secondary" onClick={fetchData} disabled={isFetching}>
-              {isFetching ? 'Refreshing...' : 'Refresh'}
+              {isFetching ? 'Actualizando...' : 'Actualizar'}
             </button>
           </div>
           
@@ -190,10 +230,10 @@ export default function AdminPortal() {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                  <th style={{ padding: '1rem' }}>Name</th>
-                  <th style={{ padding: '1rem' }}>Points</th>
-                  <th style={{ padding: '1rem' }}>Status</th>
-                  <th style={{ padding: '1rem' }}>Action</th>
+                  <th style={{ padding: '1rem' }}>Nombre</th>
+                  <th style={{ padding: '1rem' }}>Puntos</th>
+                  <th style={{ padding: '1rem' }}>Estado</th>
+                  <th style={{ padding: '1rem' }}>Acción</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,12 +247,12 @@ export default function AdminPortal() {
                         backgroundColor: u.isApprovedToBet ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                         color: u.isApprovedToBet ? 'var(--success)' : 'var(--warning)'
                       }}>
-                        {u.isApprovedToBet ? 'Approved' : 'Pending'}
+                        {u.isApprovedToBet ? 'Aprobado' : 'Pendiente'}
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
                       <button onClick={() => toggleApproval(u.id, u.isApprovedToBet)} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
-                        {u.isApprovedToBet ? 'Revoke' : 'Approve'}
+                        {u.isApprovedToBet ? 'Revocar' : 'Aprobar'}
                       </button>
                     </td>
                   </tr>
@@ -224,47 +264,47 @@ export default function AdminPortal() {
 
         {/* Create Match Section */}
         <div className="glass-card animate-fade-in">
-          <h3 style={{ marginBottom: '1rem' }}>Create Match</h3>
+          <h3 style={{ marginBottom: '1rem' }}>Crear Partido</h3>
           <form onSubmit={handleCreateMatch} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ flex: '1 1 200px' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Category (e.g. Cuartos de final)</label>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Categoría (ej. Cuartos de final)</label>
               <input 
                 type="text" 
                 className="input-field" 
                 value={newMatch.category} 
                 onChange={e => setNewMatch({...newMatch, category: e.target.value})} 
-                placeholder="Category"
+                placeholder="Nombre de la categoría"
               />
             </div>
             <div style={{ flex: '1 1 200px' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Team 1</label>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Equipo 1</label>
               <input 
                 type="text" 
                 className="input-field" 
                 value={newMatch.team1} 
                 onChange={e => setNewMatch({...newMatch, team1: e.target.value})} 
-                placeholder="Team 1 Name"
+                placeholder="Nombre Equipo 1"
               />
             </div>
             <div style={{ flex: '1 1 200px' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Team 2</label>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Equipo 2</label>
               <input 
                 type="text" 
                 className="input-field" 
                 value={newMatch.team2} 
                 onChange={e => setNewMatch({...newMatch, team2: e.target.value})} 
-                placeholder="Team 2 Name"
+                placeholder="Nombre Equipo 2"
               />
             </div>
-            <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem', height: 'fit-content' }}>Add Match</button>
+            <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem', height: 'fit-content' }}>Añadir Partido</button>
           </form>
         </div>
 
         {/* Matches List */}
         <div className="glass-card animate-fade-in">
-          <h3 style={{ marginBottom: '1.5rem' }}>Matches List</h3>
+          <h3 style={{ marginBottom: '1.5rem' }}>Lista de Partidos</h3>
           
-          {Object.keys(matchesByCategory).length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No matches created yet.</p>}
+          {Object.keys(matchesByCategory).length === 0 && <p style={{ color: 'var(--text-secondary)' }}>Aún no hay partidos creados.</p>}
           
           {Object.keys(matchesByCategory).map(category => (
             <div key={category} style={{ marginBottom: '2rem' }}>
@@ -285,7 +325,7 @@ export default function AdminPortal() {
                         background: match.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(139, 92, 246, 0.1)',
                         color: match.status === 'completed' ? 'var(--success)' : 'var(--accent-secondary)'
                       }}>
-                        {match.status === 'completed' ? `Winner: ${match.winner}` : 'Pending'}
+                        {match.status === 'completed' ? `Ganador: ${match.winner}` : 'Pendiente'}
                       </span>
                       
                       {match.status !== 'completed' && (
@@ -301,7 +341,7 @@ export default function AdminPortal() {
                             cursor: 'pointer'
                           }}
                         >
-                          {match.bettingOpen ? 'Close Betting' : 'Open Betting'}
+                          {match.bettingOpen ? 'Cerrar Apuestas' : 'Abrir Apuestas'}
                         </button>
                       )}
                     </div>
@@ -315,10 +355,18 @@ export default function AdminPortal() {
                     {match.status !== 'completed' && !match.bettingOpen && (
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button onClick={() => setWinner(match.id, match.team1)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.875rem' }}>
-                          Set {match.team1} as Winner
+                          Dar victoria a {match.team1}
                         </button>
                         <button onClick={() => setWinner(match.id, match.team2)} className="btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.875rem' }}>
-                          Set {match.team2} as Winner
+                          Dar victoria a {match.team2}
+                        </button>
+                      </div>
+                    )}
+
+                    {match.status === 'completed' && (
+                      <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem', textAlign: 'center' }}>
+                         <button onClick={() => reactivateMatch(match.id, match.winner)} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.75rem', color: 'var(--warning)', borderColor: 'var(--warning)' }}>
+                          Reactivar Partido (Deshacer)
                         </button>
                       </div>
                     )}
