@@ -1,6 +1,7 @@
 import toast from 'react-hot-toast';
 
 export const confirmAction = (message: string, onConfirm: () => void) => {
+  let isClicked = false;
   toast.custom((t) => (
     <div 
       className={`${t.visible ? 'animate-fade-in' : ''} glass-card`}
@@ -29,6 +30,8 @@ export const confirmAction = (message: string, onConfirm: () => void) => {
           className="btn-primary" 
           style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
           onClick={() => { 
+            if (isClicked) return;
+            isClicked = true;
             toast.dismiss(t.id);
             onConfirm(); 
           }}

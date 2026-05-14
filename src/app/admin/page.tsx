@@ -129,9 +129,10 @@ export default function AdminPortal() {
         
         betsSnapshot.forEach((betDoc) => {
           const betData = betDoc.data();
-          if (betData.predictedWinner === winnerName) {
+          if (betData.predictedWinner === winnerName && !betData.awarded) {
             const userRef = doc(db, 'users', betData.userId);
             batch.update(userRef, { points: increment(1) });
+            batch.update(betDoc.ref, { awarded: true });
           }
         });
         
@@ -165,9 +166,10 @@ export default function AdminPortal() {
         
         betsSnapshot.forEach((betDoc) => {
           const betData = betDoc.data();
-          if (betData.predictedWinner === currentWinner) {
+          if (betData.predictedWinner === currentWinner && betData.awarded) {
             const userRef = doc(db, 'users', betData.userId);
             batch.update(userRef, { points: increment(-1) }); // Deduct the point
+            batch.update(betDoc.ref, { awarded: false });
           }
         });
         
