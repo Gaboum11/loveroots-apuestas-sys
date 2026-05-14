@@ -32,10 +32,11 @@ export default function Dashboard() {
   const fetchData = async () => {
     setIsFetching(true);
     try {
-      // Fetch Leaderboard
+      // Fetch Leaderboard (excluding admins)
       const lQuery = query(collection(db, 'users'), orderBy('points', 'desc'));
       const lSnapshot = await getDocs(lQuery);
-      setLeaderboard(lSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const allUsers = lSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      setLeaderboard(allUsers.filter(u => u.role !== 'admin'));
 
       // Fetch Matches
       const mQuery = query(collection(db, 'matches'));

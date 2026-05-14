@@ -76,6 +76,43 @@ export default function AdminPortal() {
     }
   };
 
+  const toggleAdminRole = (userId: string, currentRole: string) => {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    confirmAction(`¿Convertir a este usuario en ${newRole === 'admin' ? 'Administrador' : 'Jugador Normal'}?`, async () => {
+      try {
+        await updateDoc(doc(db, 'users', userId), { role: newRole });
+        setUsersList(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+        toast.success(`Rol cambiado a ${newRole}`);
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al cambiar rol.');
+      }
+    });
+  };
+
+  const deleteUserAccount = (userId: string) => {
+    confirmAction('¿Borrar a este usuario? Se eliminará de la base de datos junto con todas sus predicciones.', async () => {
+      try {
+        const batch = writeBatch(db);
+        
+        // Find and delete all bets for this user
+        const betsQuery = query(collection(db, 'bets'), where('userId', '==', userId));
+        const betsSnapshot = await getDocs(betsQuery);
+        betsSnapshot.forEach(bet => batch.delete(bet.ref));
+        
+        // Delete user document
+        batch.delete(doc(db, 'users', userId));
+        
+        await batch.commit();
+        setUsersList(prev => prev.filter(u => u.id !== userId));
+        toast.success('Usuario eliminado exitosamente.');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al eliminar usuario.');
+      }
+    });
+  };
+
   const handleCreateMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMatch.category || !newMatch.team1 || !newMatch.team2) {
@@ -184,6 +221,34 @@ export default function AdminPortal() {
     });
   };
 
+  const deleteMatch = (matchId: string, status: string) => {
+    if (status === 'completed') {
+      toast.error('No puedes borrar un partido finalizado. Reactívalo primero para revertir los puntos.');
+      return;
+    }
+    
+    confirmAction('¿Estás seguro de que quieres borrar este partido? Esto eliminará permanentemente el partido y todas sus apuestas.', async () => {
+      try {
+        const betsQuery = query(collection(db, 'bets'), where('matchId', '==', matchId));
+        const betsSnapshot = await getDocs(betsQuery);
+        
+        const batch = writeBatch(db);
+        betsSnapshot.forEach(betDoc => {
+          batch.delete(betDoc.ref);
+        });
+        
+        batch.delete(doc(db, 'matches', matchId));
+        
+        await batch.commit();
+        setMatchesList(prev => prev.filter(m => m.id !== matchId));
+        toast.success('Partido borrado exitosamente.');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error al borrar el partido.');
+      }
+    });
+  };
+
   const handleSignOut = () => signOut(auth);
 
   if (loading || !user || user.role !== 'admin') {
@@ -241,13 +306,18 @@ export default function AdminPortal() {
                   <th style={{ padding: '1rem' }}>Nombre</th>
                   <th style={{ padding: '1rem' }}>Puntos</th>
                   <th style={{ padding: '1rem' }}>Estado</th>
-                  <th style={{ padding: '1rem' }}>Acción</th>
+                  <th style={{ padding: '1rem', minWidth: '200px' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {usersList.map((u) => (
                   <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td style={{ padding: '1rem' }}>{u.displayName}</td>
+                    <td style={{ padding: '1rem' }}>
+                      {u.displayName}
+                      {u.role === 'admin' && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-secondary)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radius-sm)' }}>ADMIN</span>
+                      )}
+                    </td>
                     <td style={{ padding: '1rem' }}>{u.points || 0}</td>
                     <td style={{ padding: '1rem' }}>
                       <span style={{ 
@@ -259,9 +329,22 @@ export default function AdminPortal() {
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      <button onClick={() => toggleApproval(u.id, u.isApprovedToBet)} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
-                        {u.isApprovedToBet ? 'Revocar' : 'Aprobar'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button onClick={() => toggleApproval(u.id, u.isApprovedToBet)} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
+                          {u.isApprovedToBet ? 'Revocar' : 'Aprobar'}
+                        </button>
+                        
+                        {u.id !== user?.uid && (
+                          <>
+                            <button onClick={() => toggleAdminRole(u.id, u.role)} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderColor: 'var(--accent-primary)', color: 'var(--accent-secondary)' }}>
+                              {u.role === 'admin' ? 'Quitar Admin' : 'Hacer Admin'}
+                            </button>
+                            <button onClick={() => deleteUserAccount(u.id)} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderColor: 'var(--danger)', color: 'var(--danger)' }}>
+                              Borrar
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -336,22 +419,38 @@ export default function AdminPortal() {
                         {match.status === 'completed' ? `Ganador: ${match.winner}` : 'Pendiente'}
                       </span>
                       
-                      {match.status !== 'completed' && (
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        {match.status !== 'completed' && (
+                          <button 
+                            onClick={() => toggleBetting(match.id, match.bettingOpen)}
+                            style={{
+                              fontSize: '0.75rem',
+                              background: match.bettingOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                              color: match.bettingOpen ? 'var(--danger)' : 'var(--success)',
+                              border: match.bettingOpen ? '1px solid var(--danger)' : '1px solid var(--success)',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: 'var(--radius-sm)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {match.bettingOpen ? 'Cerrar Apuestas' : 'Abrir Apuestas'}
+                          </button>
+                        )}
                         <button 
-                          onClick={() => toggleBetting(match.id, match.bettingOpen)}
+                          onClick={() => deleteMatch(match.id, match.status)}
                           style={{
                             fontSize: '0.75rem',
-                            background: match.bettingOpen ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                            color: match.bettingOpen ? 'var(--danger)' : 'var(--success)',
-                            border: match.bettingOpen ? '1px solid var(--danger)' : '1px solid var(--success)',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            color: 'var(--danger)',
+                            border: '1px solid var(--danger)',
                             padding: '0.2rem 0.5rem',
                             borderRadius: 'var(--radius-sm)',
                             cursor: 'pointer'
                           }}
                         >
-                          {match.bettingOpen ? 'Cerrar Apuestas' : 'Abrir Apuestas'}
+                          Borrar
                         </button>
-                      )}
+                      </div>
                     </div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
