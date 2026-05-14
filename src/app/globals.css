@@ -158,3 +158,33 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary); 
 }
+
+/* Responsive Layouts */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 2rem;
+}
+
+.responsive-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .responsive-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .responsive-header > div {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+  }
+}

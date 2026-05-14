@@ -39,17 +39,22 @@ export default function AdminPortal() {
 
   const fetchData = async () => {
     setIsFetching(true);
-    // Fetch users
-    const uQuery = query(collection(db, 'users'));
-    const uSnapshot = await getDocs(uQuery);
-    setUsersList(uSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    try {
+      // Fetch users
+      const uQuery = query(collection(db, 'users'));
+      const uSnapshot = await getDocs(uQuery);
+      setUsersList(uSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    // Fetch matches
-    const mQuery = query(collection(db, 'matches'));
-    const mSnapshot = await getDocs(mQuery);
-    setMatchesList(mSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    
-    setIsFetching(false);
+      // Fetch matches
+      const mQuery = query(collection(db, 'matches'));
+      const mSnapshot = await getDocs(mQuery);
+      setMatchesList(mSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to fetch data. Check permissions.');
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   const toggleApproval = async (userId: string, currentStatus: boolean) => {
@@ -146,9 +151,12 @@ export default function AdminPortal() {
 
   return (
     <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <header className="responsive-header">
         <h2>Admin Portal - Mysterious Pong</h2>
-        <button className="btn-secondary" onClick={handleSignOut}>Sign Out</button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button className="btn-secondary" onClick={() => router.push('/dashboard')}>Go to Dashboard</button>
+          <button className="btn-secondary" onClick={handleSignOut}>Sign Out</button>
+        </div>
       </header>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>

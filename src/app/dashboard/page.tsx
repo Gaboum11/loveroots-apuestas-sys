@@ -29,22 +29,31 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     setIsFetching(true);
-    // Fetch Leaderboard
-    const lQuery = query(collection(db, 'users'), orderBy('points', 'desc'));
-    const lSnapshot = await getDocs(lQuery);
-    setLeaderboard(lSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    try {
+      // Fetch Leaderboard
+      const lQuery = query(collection(db, 'users'), orderBy('points', 'desc'));
+      const lSnapshot = await getDocs(lQuery);
+      setLeaderboard(lSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    // Fetch Matches
-    const mQuery = query(collection(db, 'matches'));
-    const mSnapshot = await getDocs(mQuery);
-    setMatchesList(mSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // Fetch Matches
+      const mQuery = query(collection(db, 'matches'));
+      const mSnapshot = await getDocs(mQuery);
+      setMatchesList(mSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    // Fetch My Bets
-    const bQuery = query(collection(db, 'bets'), where('userId', '==', user?.uid));
-    const bSnapshot = await getDocs(bQuery);
-    setMyBets(bSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-    setIsFetching(false);
+      // Fetch My Bets
+      const bQuery = query(collection(db, 'bets'), where('userId', '==', user?.uid));
+      const bSnapshot = await getDocs(bQuery);
+      setMyBets(bSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err: any) {
+      console.error(err);
+      if (err.message?.includes('permissions')) {
+        alert("Permission Error: Make sure your Firebase Rules allow reading 'users'. (Test Mode recommended during dev)");
+      } else {
+        alert("Failed to fetch data.");
+      }
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   const handlePredict = async (matchId: string, predictedWinner: string) => {
@@ -83,9 +92,14 @@ export default function Dashboard() {
 
   return (
     <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <header className="responsive-header">
         <h2>Welcome, {user.displayName}</h2>
-        <button className="btn-secondary" onClick={handleSignOut}>Sign Out</button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          {user.role === 'admin' && (
+            <button className="btn-secondary" onClick={() => router.push('/admin')}>Admin Portal</button>
+          )}
+          <button className="btn-secondary" onClick={handleSignOut}>Sign Out</button>
+        </div>
       </header>
 
       {!user.isApprovedToBet ? (
@@ -97,7 +111,7 @@ export default function Dashboard() {
           <button className="btn-secondary" onClick={fetchData} style={{ marginTop: '2rem' }}>Refresh Status</button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '2rem' }}>
+        <div className="dashboard-grid">
           {/* Main Dashboard Area */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             <div className="glass-card animate-fade-in">
